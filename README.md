@@ -7,10 +7,12 @@ Keys stored on YubiKey are [non-exportable](https://support.yubico.com/support/s
 Download and install MacPorts and the following packages:
 
 ```console
-$ port install gnupg2 pinentry_mac
-$ ln -sh /opt/local/bin/gpg2 /usr/local/bin/gpg
+$ sudo port install gnupg2 +pinentry_mac
+$ sudo ln -sh /opt/local/bin/gpg2 /usr/local/bin/gpg
+$ alias ykman='/Applications/YubiKey\ Manager.app/Contents/MacOS/ykman'
 ```
 
+Or do the equivalent for homebrew, or download the GnuPGP app directly.
 
 ## YubiKey
 
@@ -24,7 +26,7 @@ This will seed the (Linux) kernel's PRNG with additional 512 bytes retrieved fro
 
 # Creating keys
 
-Otherwise, to preserve the working environment, set the GnuPG directory to your home folder:
+Otherwise, to preserve the working environment, set the GnuPG directory to your home folder (default location for this):
 
 ```console
 $ export GNUPGHOME=~/.gnupg
@@ -32,95 +34,16 @@ $ export GNUPGHOME=~/.gnupg
 
 ## Harden configuration
 
-Create a hardened configuration in the temporary working directory with the following options:
+Create a hardened configuration in the working directory with the following options:
 
 ```console
 $ echo "# added from https://raw.githubusercontent.com/drduh/config/master/gpg.conf" >> $GNUPGHOME/gpg.conf
 $ curl https://raw.githubusercontent.com/drduh/config/master/gpg.conf >> $GNUPGHOME/gpg.conf
 ```
 
-Disable networking for the remainder of the setup.
-
 # Master key
 
-The only keys to generate is a master key on the YubiKey itself to ensure no other copies exist.
-
-
-# Sign with existing key
-
-(Optional) If you already have a PGP key, you may want to sign the new key with the old one to prove that the new key is controlled by you.
-
-Export your existing key to move it to the working keyring:
-
-```console
-$ gpg --export-secret-keys --armor --output /tmp/new.sec
-```
-
-Then sign the new key:
-
-```console
-$ gpg  --default-key $OLDKEY --sign-key $KEYID
-```
-
-# Verify
-
-List the generated secret keys and verify the output:
-
-```console
-$ gpg -K
-/tmp.FLZC0xcM/pubring.kbx
--------------------------------------------------------------------------
-sec   rsa4096/0xFF3E7D88647EBCDB 2017-10-09 [C]
-      Key fingerprint = 011C E16B D45B 27A5 5BA8  776D FF3E 7D88 647E BCDB
-uid                            Dr Duh <doc@duh.to>
-ssb   rsa4096/0xBECFA3C1AE191D15 2017-10-09 [S] [expires: 2018-10-09]
-ssb   rsa4096/0x5912A795E90DD2CF 2017-10-09 [E] [expires: 2018-10-09]
-ssb   rsa4096/0x3F29127E79649A3D 2017-10-09 [A] [expires: 2018-10-09]
-```
-
-Add any additional identities or email addresses you wish to associate using the `adduid` command.
-
-**Tip** Verify with a OpenPGP [key best practice checker](https://riseup.net/en/security/message-security/openpgp/best-practices#openpgp-key-checks):
-
-```console
-$ gpg --export $KEYID | hokey lint
-```
-
-The output will display any problems with your key in red text. If everything is green, your key passes each of the tests. If it is red, your key has failed one of the tests.
-
-> hokey may warn (orange text) about cross certification for the authentication key. GPG's [Signing Subkey Cross-Certification](https://gnupg.org/faq/subkey-cross-certify.html) documentation has more detail on cross certification, and gpg v2.2.1 notes "subkey <keyid> does not sign and so does not need to be cross-certified". hokey may also indicate a problem (red text) with `Key expiration times: []` on the primary key (see [Note #3](#notes) about not setting an expiry for the primary key).
-
-# Revocation certificate
-
-Although the master key will be securely stored on the key, it is best practice to never rule out the possibility of losing it or having the hardware fail. Without the master key, it will be impossible generate a revocation certificate later.
-
-Even worse, we cannot advertise this fact in any way to those that are using our keys. It is reasonable to assume this *will* occur at some point and the only remaining way to deprecate orphaned keys is a revocation certificate.
-
-To create the revocation certificate:
-
-``` console
-$ gpg --output $GNUPGHOME/revoke.asc --gen-revoke $KEYID
-```
-
-The `revoke.asc` certificate file should be stored (or printed) in a (secondary) place that allows retrieval in case the main backup fails.
-
-# Export public keys
-
-**Important** Without the *public* key, you will not be able to use GPG to encrypt, decrypt, nor sign messages. However, you will still be able to use YubiKey for SSH authentication.
-
-Upload the public key to a [public keyserver](https://debian-administration.org/article/451/Submitting_your_GPG_key_to_a_keyserver):
-
-```console
-$ gpg --send-key $KEYID
-
-$ gpg --keyserver pgp.mit.edu --send-key $KEYID
-
-$ gpg --keyserver keys.gnupg.net --send-key $KEYID
-
-$ gpg --keyserver hkps://keyserver.ubuntu.com:443 --send-key $KEYID
-```
-
-After some time, the public key will propagate to [other](https://pgp.key-server.io/pks/lookup?search=doc%40duh.to&fingerprint=on&op=vindex) [servers](https://pgp.mit.edu/pks/lookup?search=doc%40duh.to&op=index).
+The only keys to generate is a master key on the YubiKey itself, to ensure no other copies exist.
 
 # Configure Smartcard
 
@@ -174,7 +97,7 @@ Name       | Default Value | Use
 -----------|---------------|-------------------------------------------------------------
 PIN        | `123456`      | decrypt and authenticate (SSH)
 Admin PIN  | `12345678`    | reset *PIN*, change *Reset Code*, add keys and owner information
-Reset code | _**None**_      | reset *PIN* ([more information](https://forum.yubico.com/viewtopicd01c.html?p=9055#p9055))
+Reset code | _**None**_    | reset *PIN* ([more information](https://forum.yubico.com/viewtopicd01c.html?p=9055#p9055))
 
 Values are valid up to 127 ASCII characters and must be at least 6 (*PIN*) or 8 (*Admin PIN*, *Reset Code*) characters. See the GnuPG documentation on [Managing PINs](https://www.gnupg.org/howtos/card-howto/en/ch03s02.html) for details.
 
@@ -260,6 +183,16 @@ gpg/card> quit
 
 # Generate keys
 
+```
+gpg/card> admin
+Admin commands are allowed
+
+gpg/card> generate
+
+# follow the prompts to make the keys
+# partly as observed here: https://developers.yubico.com/PGP/Importing_keys.html
+```
+
 # Verify card
 
 Verify the sub-keys have been moved to YubiKey as indicated by `ssb>`:
@@ -276,31 +209,69 @@ ssb>  rsa4096/0x5912A795E90DD2CF 2017-10-09 [E] [expires: 2018-10-09]
 ssb>  rsa4096/0x3F29127E79649A3D 2017-10-09 [A] [expires: 2018-10-09]
 ```
 
+# Sign with existing key
+
+(Optional) If you already have a PGP key, you may want to finish by signing the new key with the old one to prove that the new key is controlled by you.
+
+Export your existing key to move it to the working keyring:
+
+```console
+$ gpg --export-secret-keys --armor --output /tmp/new.sec
+```
+
+Then sign the new key:
+
+```console
+$ gpg  --default-key $OLDKEY --sign-key $KEYID
+```
+
+**Tip** Verify with a OpenPGP [key best practice checker](https://riseup.net/en/security/message-security/openpgp/best-practices#openpgp-key-checks):
+
+```console
+$ gpg --export $KEYID | hokey lint
+```
+
+The output will display any problems with your key in red text. If everything is green, your key passes each of the tests. If it is red, your key has failed one of the tests.
+
+> hokey may warn (orange text) about cross certification for the authentication key. GPG's [Signing Subkey Cross-Certification](https://gnupg.org/faq/subkey-cross-certify.html) documentation has more detail on cross certification, and gpg v2.2.1 notes "subkey <keyid> does not sign and so does not need to be cross-certified". hokey may also indicate a problem (red text) with `Key expiration times: []` on the primary key (see [Note #3](#notes) about not setting an expiry for the primary key).
+
+# Revocation certificate
+
+Although the master key will be securely stored on the key, it is best practice to never rule out the possibility of losing it or having the hardware fail. Without the master key, it will be impossible generate a revocation certificate later.
+
+Even worse, we cannot advertise this fact in any way to those that are using our keys. It is reasonable to assume this *will* occur at some point and the only remaining way to deprecate orphaned keys is a revocation certificate.
+
+To create the revocation certificate:
+
+``` console
+$ gpg --output $GNUPGHOME/revoke.asc --gen-revoke $KEYID
+```
+
+The `revoke.asc` certificate file should be stored (or printed) in a (secondary) place that allows retrieval in case the main backup fails.
+
+# Export public keys
+
+**Important** Without the *public* key, you will not be able to use GPG to encrypt, decrypt, nor sign messages. However, you will still be able to use YubiKey for SSH authentication.
+
+Upload the public key to a [public keyserver](https://debian-administration.org/article/451/Submitting_your_GPG_key_to_a_keyserver):
+
+```console
+$ gpg --send-key $KEYID
+
+$ gpg --keyserver pgp.mit.edu --send-key $KEYID
+
+$ gpg --keyserver keys.gnupg.net --send-key $KEYID
+
+$ gpg --keyserver hkps://keyserver.ubuntu.com:443 --send-key $KEYID
+```
+
+After some time, the public key will propagate to [other](https://pgp.key-server.io/pks/lookup?search=doc%40duh.to&fingerprint=on&op=vindex) [servers](https://pgp.mit.edu/pks/lookup?search=doc%40duh.to&op=index).
+
 ## Switching between two or more Yubikeys.
 	
-When you add a GPG key to a Yubikey using the *keytocard* command, GPG deletes the key from your keyring and adds a *stub* pointing to that exact Yubikey (the stub identifies the GPG KeyID and the Yubikey's serial number).
-	
-However, when you do this same operation for a second Yubikey, the stub in your keyring is overwritten by the *keytocard* operation and now the stub points to your second Yubikey. Adding more repeats this overwriting operation.
+1. To switch between two or more identities on different keys - unplug the first key and restart gpg-agent, ssh-agent and pinentry with `pkill gpg-agent ; pkill ssh-agent ; pkill pinentry ; eval $(gpg-agent --daemon --enable-ssh-support)`, then plug in the other key and run `gpg-connect-agent updatestartuptty /bye` - then it should be ready for use.
+1. To use yubikeys on more than one computer with gpg: After the initial setup, import the public keys on the second workstation. Confirm gpg can see the card via `gpg --card-status`, Trust the public keys you imported ultimately (as above). At this point `gpg --list-secret-keys` should show your (trusted) key.
 
-In other words, the stub will point ONLY to the LAST Yubikey written to.
-	
-When using GPG key operations with the GPG key you placed onto the Yubikeys, GPG will request a specific Yubikey asking that you insert a Yubikey with a given serial number (referenced by the stub). GPG will not recognise another Yubikey with a different serial number without manual intervention.
-	
-You can force GPG to scan the card and re-create the stubs to point to another Yubikey. 
-
-Having created two (or more Yubikeys) with the same GPG key (as described above) where the stubs are pointing to the second Yubikey:
-	
-Insert the first Yubikey (which has a different serial numnber) and run the following command:
-	
-```console
-$  gpg-connect-agent "scd serialno" "learn --force" /bye
-```
-GPG will then scan your first Yubikey for GPG keys and recreate the stubs to point to the GPG keyID and Yubikey Serial number of this first Yubikey.
-	
-To return to using the second Yubikey just repeat (insert other Yubikey and re-run command).
-	
-Obviously this command is not easy to remember so it is recommended to either create a script or a shell alias to make this more user friendly.
-	
 # Cleanup
 
 Ensure you have:
@@ -351,7 +322,6 @@ gpg: Good signature from "Dr Duh <doc@duh.to>" [ultimate]
 Primary key fingerprint: 011C E16B D45B 27A5 5BA8  776D FF3E 7D88 647E BCDB
      Subkey fingerprint: 07AA 7735 E502 C5EB E09E  B8B0 BECF A3C1 AE19 1D15
 ```
-
 
 # Rotating keys
 
@@ -612,7 +582,7 @@ Create `$HOME/Library/LaunchAgents/gnupg.gpg-agent.plist` with the following con
         <false/>
         <key>ProgramArguments</key>
         <array>
-            <string>/usr/local/MacGPG2/bin/gpg-connect-agent</string>
+            <string>/opt/local/bin/gpg-connect-agent</string>
             <string>/bye</string>
         </array>
     </dict>
@@ -733,36 +703,6 @@ You should change the path according to `gpgconf --list-dirs agent-socket` on *r
 
 **Note** On *local* you have `S.gpg-agent.extra` whereas on *remote* and *third*, you only have `S.gpg-agent`.
 
-# Using Multiple Keys
-
-To use a single identity with multiple YubiKeys - or to replace a lost card with another - issue this command to switch keys:
-
-```console
-$ gpg-connect-agent "scd serialno" "learn --force" /bye
-```
-
-Alternatively, use a script to delete the GnuPG shadowed key, where the card serial number is stored (see [GnuPG #T2291](https://dev.gnupg.org/T2291)):
-
-```console
-$ cat >> ~/scripts/remove-keygrips.sh <<EOF
-#!/usr/bin/env bash
-test ! "$@" && echo "Specify a key." && exit 1
-KEYGRIPS="$(gpg --with-keygrip --list-secret-keys $@ | grep Keygrip | awk '{print $3}')"
-for keygrip in $KEYGRIPS
-do
-    rm "$HOME/.gnupg/private-keys-v1.d/$keygrip.key" 2> /dev/null
-done
-
-gpg --card-status
-EOF
-
-$ chmod +x ~/scripts/remove-keygrips.sh
-
-$ ~/scripts/remove-keygrips.sh $KEYID
-```
-
-See discussion in Issues [#19](https://github.com/drduh/YubiKey-Guide/issues/19) and [#112](https://github.com/drduh/YubiKey-Guide/issues/112) for more information and troubleshooting steps.
-
 # Require touch
 
 **Note** This is not possible on YubiKey NEO.
@@ -827,99 +767,16 @@ YubiKey will blink when it is waiting for a touch. On Linux you can also use [yu
 
 # Reset
 
-If PIN attempts are exceeded, the card is locked and must be [reset](https://developers.yubico.com/ykneo-openpgp/ResetApplet.html) and set up again using the encrypted backup.
-
-Copy the following script to a file and run `gpg-connect-agent -r $file` to lock and terminate the card. Then re-insert YubiKey to reset.
-
-```console
-/hex
-scd serialno
-scd apdu 00 20 00 81 08 40 40 40 40 40 40 40 40
-scd apdu 00 20 00 81 08 40 40 40 40 40 40 40 40
-scd apdu 00 20 00 81 08 40 40 40 40 40 40 40 40
-scd apdu 00 20 00 81 08 40 40 40 40 40 40 40 40
-scd apdu 00 20 00 83 08 40 40 40 40 40 40 40 40
-scd apdu 00 20 00 83 08 40 40 40 40 40 40 40 40
-scd apdu 00 20 00 83 08 40 40 40 40 40 40 40 40
-scd apdu 00 20 00 83 08 40 40 40 40 40 40 40 40
-scd apdu 00 e6 00 00
-scd apdu 00 44 00 00
-/echo Card has been successfully reset.
-```
-
-Or use `ykman` (sometimes in `~/.local/bin/`):
-
-```console
-$ ykman openpgp reset
-WARNING! This will delete all stored OpenPGP keys and data and restore factory settings? [y/N]: y
-Resetting OpenPGP data, don't remove your YubiKey...
-Success! All data has been cleared and default PINs are set.
-PIN:         123456
-Reset code:  NOT SET
-Admin PIN:   12345678
-```
-
-# Recovery after reset
-
-There is no recovery. Start over from the top.
+If PIN attempts are exceeded, the card is locked and must be [reset](https://developers.yubico.com/ykneo-openpgp/ResetApplet.html) and set up again from the beginning. There is no recovery.
 
 # Notes
 
 1. YubiKey has two configurations: one invoked with a short press, and the other with a long press. By default, the short-press mode is configured for HID OTP - a brief touch will emit an OTP string starting with `cccccccc`. If you rarely use the OTP mode, you can swap it to the second configuration via the YubiKey Personalization tool. If you *never* use OTP, you can disable it entirely using the [YubiKey Manager](https://developers.yubico.com/yubikey-manager) application (note, this not the similarly named older YubiKey NEO Manager).
 1. Programming YubiKey for GPG keys still lets you use its other configurations - [U2F](https://en.wikipedia.org/wiki/Universal_2nd_Factor), [OTP](https://www.yubico.com/faq/what-is-a-one-time-password-otp/) and [static password](https://www.yubico.com/products/services-software/personalization-tools/static-password/) modes, for example.
-1. Setting an expiry essentially forces you to manage your subkeys and announces to the rest of the world that you are doing so. Setting an expiry on a primary key is ineffective for protecting the key from loss - whoever has the primary key can simply extend its expiry period. Revocation certificates are [better suited](https://security.stackexchange.com/questions/14718/does-openpgp-key-expiration-add-to-security/79386#79386) for this purpose. It may be appropriate for your use case to set expiry dates on subkeys.
-1. To switch between two or more identities on different keys - unplug the first key and restart gpg-agent, ssh-agent and pinentry with `pkill gpg-agent ; pkill ssh-agent ; pkill pinentry ; eval $(gpg-agent --daemon --enable-ssh-support)`, then plug in the other key and run `gpg-connect-agent updatestartuptty /bye` - then it should be ready for use.
-1. To use yubikeys on more than one computer with gpg: After the initial setup, import the public keys on the second workstation. Confirm gpg can see the card via `gpg --card-status`, Trust the public keys you imported ultimately (as above). At this point `gpg --list-secret-keys` should show your (trusted) key.
+
 
 # Troubleshooting
 
-- Use `man gpg` to understand GPG options and command-line flags.
-
 - To get more information on potential errors, restart the `gpg-agent` process with debug output to the console with `pkill gpg-agent; gpg-agent --daemon --no-detach -v -v --debug-level advanced --homedir ~/.gnupg`.
 
-- If you encounter problems connecting to YubiKey with GPG - try unplugging and re-inserting YubiKey, and restarting the `gpg-agent` process.
-
-- If you receive the error, `gpg: decryption failed: secret key not available` - you likely need to install GnuPG version 2.x. Another possibility is that there is a problem with the PIN, e.g. it is too short or blocked.
-
-- If you receive the error, `Yubikey core error: no yubikey present` - make sure the YubiKey is inserted correctly. It should blink once when plugged in.
-
-- If you still receive the error, `Yubikey core error: no yubikey present` - you likely need to install newer versions of yubikey-personalize as outlined in [Required software](#required-software).
-
-- If you receive the error, `Yubikey core error: write error` - YubiKey is likely locked. Install and run yubikey-personalization-gui to unlock it.
-
-- If you receive the error, `Key does not match the card's capability` - you likely need to use 2048 bit RSA key sizes.
-
-- If you receive the error, `sign_and_send_pubkey: signing failed: agent refused operation` - make sure you replaced `ssh-agent` with `gpg-agent` as noted above.
-
-- If you still receive the error, `sign_and_send_pubkey: signing failed: agent refused operation` - [run the command](https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=835394) `gpg-connect-agent updatestartuptty /bye`
-
-- If you still receive the error, `sign_and_send_pubkey: signing failed: agent refused operation` - edit `~/.gnupg/gpg-agent.conf` to set a valid `pinentry` program path, e.g. `pinentry-program /usr/local/bin/pinentry-mac` on macOS.
-
-- If you receive the error, `The agent has no identities` from `ssh-add -L`, make sure you have installed and started `scdaemon`.
-
-- If you receive the error, `Error connecting to agent: No such file or directory` from `ssh-add -L`, the UNIX file socket that the agent uses for communication with other processes may not be set up correctly. On Debian, try `export SSH_AUTH_SOCK="/run/user/$UID/gnupg/S.gpg-agent.ssh"`. Also see that `gpgconf --list-dirs agent-ssh-socket` is returning single path, to existing `S.gpg-agent.ssh` socket.
-
-- If you receive the error, `Permission denied (publickey)`, increase ssh verbosity with the `-v` flag and ensure the public key from the card is being offered: `Offering public key: RSA SHA256:abcdefg... cardno:00060123456`. If it is, ensure you are connecting as the right user on the target system, rather than as the user on the local system. Otherwise, be sure `IdentitiesOnly` is not [enabled](https://github.com/FiloSottile/whosthere#how-do-i-stop-it) for this host.
-
-- If SSH authentication still fails - add up to 3 `-v` flags to the `ssh` client to increase verbosity.
-
-- If it still fails, it may be useful to stop the background `sshd` daemon process service on the server (e.g. using `sudo systemctl stop sshd`) and instead start it in the foreground with extensive debugging output, using `/usr/sbin/sshd -eddd`. Note that the server will not fork and will only process one connection, therefore has to be re-started after every `ssh` test.
-
-- If you receive the error, `Please insert the card with serial number: *` see [using of multiple keys](#using-multiple-keys).
-
-- If you receive the error, `There is no assurance this key belongs to the named user` or `encryption failed: Unusable public key` use `gpg --edit-key` to set `trust` to `5 = I trust ultimately`.
-  - If, when you try the above `--edit-key` command, you get the error 
-    `Need the secret key to do this.`, you can manually specify trust for the key in
-    `~/.gnupg/gpg.conf` by using the `trust-key [your key ID]` directive.
-
-- If, when using a previously provisioned YubiKey on a new computer with `pass`, you see the
-  following error on `pass insert`:
-    ```
-    gpg: 0x0000000000000000: There is no assurance this key belongs to the named user
-    gpg: [stdin]: encryption failed: Unusable public key
-    ```
-    you need to adjust the trust associated with the key. See the above bullet.
-
-- If you receive the error, `gpg: 0x0000000000000000: skipped: Unusable public key` or `encryption failed: Unusable public key` the sub-key may be expired and can no longer be used to encrypt nor sign messages. It can still be used to decrypt and authenticate, however.
-
-- Refer to Yubico article [Troubleshooting Issues with GPG](https://support.yubico.com/hc/en-us/articles/360013714479-Troubleshooting-Issues-with-GPG) for additional guidance.
+- For more error information, see the original guide or refer to Yubico article [Troubleshooting Issues with GPG](https://support.yubico.com/hc/en-us/articles/360013714479-Troubleshooting-Issues-with-GPG) for additional guidance.
