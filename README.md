@@ -184,13 +184,40 @@ gpg/card> quit
 # Generate keys
 
 ```
-gpg/card> admin
-Admin commands are allowed
+gpg/card> key-attr
+Changing card key attribute for: Signature key
+Please select what kind of key you want:
+   (1) RSA
+   (2) ECC
+Your selection? 1
+What keysize do you want? (4096)
+```
+
+Repeat this for each key type.
+
+The follow the prompts to make the keys:
+(partly as observed here: https://developers.yubico.com/PGP/Importing_keys.html)
+
+
+```
+gpg/card> list
+Key attributes ...: rsa4096 rsa4096 rsa4096
 
 gpg/card> generate
+Make off-card backup of encryption key? (Y/n) n
 
-# follow the prompts to make the keys
-# partly as observed here: https://developers.yubico.com/PGP/Importing_keys.html
+Key is valid for? (0) 0
+Key does not expire at all
+Is this correct? (y/N) y
+```
+We do not want a partial backup, as recommended here: https://docs.nitrokey.com/pro/openpgp-keygen-on-device.html
+
+After inputting the info, this will take awhile, as it generates randomness and creates the key.
+
+Export the key ID as a [variable](https://stackoverflow.com/questions/1158091/defining-a-variable-with-or-without-export/1158231#1158231) (`KEYID`) for use later:
+
+```console
+$ export KEYID=0xFF3E7D88647EBCDB
 ```
 
 # Verify card
@@ -199,7 +226,7 @@ Verify the sub-keys have been moved to YubiKey as indicated by `ssb>`:
 
 ```console
 $ gpg -K
-/tmp.FLZC0xcM/pubring.kbx
+~/.gnupg/pubring.kbx
 -------------------------------------------------------------------------
 sec   rsa4096/0xFF3E7D88647EBCDB 2017-10-09 [C]
       Key fingerprint = 011C E16B D45B 27A5 5BA8  776D FF3E 7D88 647E BCDB
@@ -213,27 +240,12 @@ ssb>  rsa4096/0x3F29127E79649A3D 2017-10-09 [A] [expires: 2018-10-09]
 
 (Optional) If you already have a PGP key, you may want to finish by signing the new key with the old one to prove that the new key is controlled by you.
 
-Export your existing key to move it to the working keyring:
+Plug in the old key, and call:
 
 ```console
-$ gpg --export-secret-keys --armor --output /tmp/new.sec
-```
-
-Then sign the new key:
-
-```console
+$ export OLDKEY=0xFF3E7D88647EBCDB
 $ gpg  --default-key $OLDKEY --sign-key $KEYID
 ```
-
-**Tip** Verify with a OpenPGP [key best practice checker](https://riseup.net/en/security/message-security/openpgp/best-practices#openpgp-key-checks):
-
-```console
-$ gpg --export $KEYID | hokey lint
-```
-
-The output will display any problems with your key in red text. If everything is green, your key passes each of the tests. If it is red, your key has failed one of the tests.
-
-> hokey may warn (orange text) about cross certification for the authentication key. GPG's [Signing Subkey Cross-Certification](https://gnupg.org/faq/subkey-cross-certify.html) documentation has more detail on cross certification, and gpg v2.2.1 notes "subkey <keyid> does not sign and so does not need to be cross-certified". hokey may also indicate a problem (red text) with `Key expiration times: []` on the primary key (see [Note #3](#notes) about not setting an expiry for the primary key).
 
 # Revocation certificate
 
@@ -244,7 +256,15 @@ Even worse, we cannot advertise this fact in any way to those that are using our
 To create the revocation certificate:
 
 ``` console
-$ gpg --output $GNUPGHOME/revoke.asc --gen-revoke $KEYID
+$ gpg --output $GNUPGHOME/revoke-$KEYID.asc --gen-revoke $KEYID
+Create a revocation certificate for this key? (y/N) y
+Please select the reason for the revocation:
+Your decision? 1
+Enter an optional description; end it with an empty line:
+> 
+Reason for revocation: Key has been compromised
+(No description given)
+Is this okay? (y/N) y
 ```
 
 The `revoke.asc` certificate file should be stored (or printed) in a (secondary) place that allows retrieval in case the main backup fails.
@@ -266,6 +286,32 @@ $ gpg --keyserver hkps://keyserver.ubuntu.com:443 --send-key $KEYID
 ```
 
 After some time, the public key will propagate to [other](https://pgp.key-server.io/pks/lookup?search=doc%40duh.to&fingerprint=on&op=vindex) [servers](https://pgp.mit.edu/pks/lookup?search=doc%40duh.to&op=index).
+
+```
+$ gpg --ouput ~/"$USER-$(date '+%Y-%m-%d')".asc --armor --export $KEYID
+```
+
+Upload this as a file somewhere, such as <https://gist.github.com>, then set the file on the card:
+
+```
+$ gpg --card-edit
+gpg/card> admin
+Admin commands are allowed
+
+gpg/card> url
+URL to retrieve public key:
+```
+
+You may also want to store it as a signing key for git and GitHub:
+
+https://github.com/settings/gpg/new
+https://github.com/libuv/libuv/blob/master/MAINTAINERS.md#storing-a-maintainer-key-in-git
+
+```
+git config --global tag.gpgSign true
+# git config --global commit.gpgSign true
+# git config --global user.signingKey $KEYID
+```
 
 ## Switching between two or more Yubikeys.
 	
