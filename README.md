@@ -140,6 +140,68 @@ The number of retry attempts can be changed with the following command, document
 ykman openpgp access set-retries 5 5 5
 ```
 
+# Require touch
+
+**Note** This is not possible on YubiKey NEO.
+
+By default, YubiKey will perform encryption, signing and authentication operations without requiring any action from the user, after the key is plugged in and first unlocked with the PIN.
+
+To require a touch for each key operation, install [YubiKey Manager](https://developers.yubico.com/yubikey-manager/) and recall the Admin PIN:
+
+**Note** Older versions of YubiKey Manager use `touch` instead of `set-touch` in the following commands.
+
+Authentication:
+
+```console
+$ ykman openpgp keys set-touch aut on
+```
+
+Signing:
+
+```console
+$ ykman openpgp keys set-touch sig on
+```
+
+Encryption:
+
+```console
+$ ykman openpgp keys set-touch enc on
+```
+
+Depending on how the YubiKey is going to be used, you may want to look at the policy options for each of these and adjust the above commands accordingly. They can be viewed with the following command:
+
+```
+$ ykman openpgp keys set-touch -h
+Usage: ykman openpgp keys set-touch [OPTIONS] KEY POLICY
+
+  Set touch policy for OpenPGP keys.
+
+  KEY     Key slot to set (sig, enc, aut or att).
+  POLICY  Touch policy to set (on, off, fixed, cached or cached-fixed).
+
+  The touch policy is used to require user interaction for all operations using the private key on the YubiKey. The touch policy is set individually for each key slot. To see the current touch policy, run
+
+      $ ykman openpgp info
+
+  Touch policies:
+
+  Off (default)   No touch required
+  On              Touch required
+  Fixed           Touch required, can't be disabled without a full reset
+  Cached          Touch required, cached for 15s after use
+  Cached-Fixed    Touch required, cached for 15s after use, can't be disabled
+                  without a full reset
+
+Options:
+  -a, --admin-pin TEXT  Admin PIN for OpenPGP.
+  -f, --force           Confirm the action without prompting.
+  -h, --help            Show this message and exit.
+```
+
+If the YubiKey is going to be used within an email client that opens and verifies encrypted mail, `Cached` or `Cached-Fixed` may be desirable.
+
+YubiKey will blink when it is waiting for a touch. On Linux you can also use [yubikey-touch-detector](https://github.com/maximbaz/yubikey-touch-detector) to have an indicator or notification that YubiKey is waiting for a touch.
+
 ## Set information
 
 Some fields are optional.
@@ -299,7 +361,10 @@ gpg/card> admin
 Admin commands are allowed
 
 gpg/card> url
-URL to retrieve public key:
+URL to retrieve public key: https://gist.githubusercontent.com/...
+
+gpg/card> fetch
+gpg: requesting key from 'https://gist.githubusercontent.com/...'
 ```
 
 You may also want to store it as a signing key for git and GitHub:
@@ -316,7 +381,27 @@ git config --global tag.gpgSign true
 ## Switching between two or more Yubikeys.
 	
 1. To switch between two or more identities on different keys - unplug the first key and restart gpg-agent, ssh-agent and pinentry with `pkill gpg-agent ; pkill ssh-agent ; pkill pinentry ; eval $(gpg-agent --daemon --enable-ssh-support)`, then plug in the other key and run `gpg-connect-agent updatestartuptty /bye` - then it should be ready for use.
-1. To use yubikeys on more than one computer with gpg: After the initial setup, import the public keys on the second workstation. Confirm gpg can see the card via `gpg --card-status`, Trust the public keys you imported ultimately (as above). At this point `gpg --list-secret-keys` should show your (trusted) key.
+1. To use yubikeys on more than one computer with gpg: After the initial setup, import the public keys on the second workstation. Confirm gpg can see the card via `gpg --card-status`, and trust the public keys you imported ultimately (as below). At this point `gpg --list-secret-keys` should show your (trusted) key.
+
+```
+$ gpg --card-edit
+gpg/card> fetch
+
+$ gpg --edit-key $KEYID
+gpg> trust
+Please decide how far you trust this user to correctly verify other users' keys
+(by looking at passports, checking fingerprints from different sources, etc.)
+
+  1 = I don't know or won't say
+  2 = I do NOT trust
+  3 = I trust marginally
+  4 = I trust fully
+  5 = I trust ultimately
+  m = back to the main menu
+
+Your decision? 5
+Do you really want to set this key to ultimate trust? (y/N) y
+```
 
 # Cleanup
 
@@ -433,7 +518,6 @@ gpgconf --launch gpg-agent
 
 Note that if you use `ForwardAgent` for ssh-agent forwarding, `SSH_AUTH_SOCK` only needs to be set on the *local* laptop (workstation), where the YubiKey is plugged in.  On the *remote* server that we SSH into, `ssh` will automatically set `SSH_AUTH_SOCK` to something like `/tmp/ssh-mXzCzYT2Np/agent.7541` when we connect.  We therefore do **NOT** manually set `SSH_AUTH_SOCK` on the server - doing so would break [SSH Agent Forwarding](#remote-machines-ssh-agent-forwarding).
 
-If you use `S.gpg-agent.ssh` (see [SSH Agent Forwarding](#remote-machines-ssh-agent-forwarding) for more info), `SSH_AUTH_SOCK` should also be set on the *remote*. However, `GPG_TTY` should not be set on the *remote*, explanation specified in that section.
 
 ## Copy public key
 
@@ -532,9 +616,9 @@ When using the key `pinentry` will be invoked to request the key's passphrase. T
 
 There are two methods for ssh-agent forwarding, one is provided by OpenSSH and the other is provided by GnuPG.
 
-The latter one may be more insecure as raw socket is just forwarded (not like `S.gpg-agent.extra` with only limited functionality; if `ForwardAgent` implemented by OpenSSH is just forwarding the raw socket, then they are insecure to the same degree). But for the latter one, one convenience is that one may forward once and use this agent everywhere in the remote. So again, proceed with caution!
+The latter one may be more insecure as it may expose the whole key and not just our ssh keys, and is harder to setup too, so we do not recommend it or cover it here.
 
-For example, `tmux` does not have some environment variables like `$SSH_AUTH_SOCK` when you ssh into remote and attach an old `tmux` session. In this case if you use `ForwardAgent`, you need to find the socket manually and `export SSH_AUTH_SOCK=/tmp/ssh-agent-xxx/xxxx.socket` for each shell. But with `S.gpg-agent.ssh` in fixed place, one can just use it as ssh-agent in their shell rc file.
+While `tmux` and `screen` will have difficulty using `$SSH_AUTH_SOCK` when you ssh into remote and attach an old `tmux` session. In this case, you can use the `byobu` wrapper, and it will handle keeping it refreshed automatically.
 
 ### Use ssh-agent 
 
@@ -542,55 +626,9 @@ In the above steps, you have successfully configured a local ssh-agent.
 
 You should now be able use `ssh -A remote` on the _local_ machine to log into _remote_, and should then be able to use YubiKey as if it were connected to the remote machine. For example, using e.g. `ssh-add -l` on that remote machine should show the public key from the YubiKey (note `cardno:`).  (If you don't want to have to remember to use `ssh -A`, you can use `ForwardAgent yes` in `~/.ssh/config`.  As a security best practice, always use `ForwardAgent yes` only for a single `Hostname`, never for all servers.)
 
-### Use S.gpg-agent.ssh
-
-First you need to go through [Remote Machines (GPG Agent Forwarding)](#remote-machines-gpg-agent-forwarding), know the conditions for gpg-agent forwarding and know the location of `S.gpg-agent.ssh` on both the local and the remote.
-
-You may use the command:
-
-```console
-$ gpgconf --list-dirs agent-ssh-socket
-```
-
-Then in your `.ssh/config` add one sentence for that remote
-
-```
-Host
-  Hostname remote-host.tld
-  StreamLocalBindUnlink yes
-  RemoteForward /run/user/1000/gnupg/S.gpg-agent.ssh /run/user/1000/gnupg/S.gpg-agent.ssh
-  # RemoteForward [remote socket] [local socket]
-  # Note that ForwardAgent is not wanted here!
-```
-
-After successfully ssh into the remote, you should check that you have `/run/user/1000/gnupg/S.gpg-agent.ssh` lying there.
-
-Then in the *remote* you can type in command line or configure in the shell rc file with:
-
-```console
-export SSH_AUTH_SOCK="/run/user/$UID/gnupg/S.gpg-agent.ssh"
-```
-
-After typing or sourcing your shell rc file, with `ssh-add -l` you should find your ssh public key now.
-
-**Note** In this process no gpg-agent in the remote is involved, hence `gpg-agent.conf` in the remote is of no use. Also pinentry is invoked locally.
-
 ### Chained SSH Agent Forwarding
 
-If you use `ssh-agent` provided by OpenSSH and want to forward it into a *third* box, you can just `ssh -A third` on the *remote*.
-
-Meanwhile, if you use `S.gpg-agent.ssh`, assume you have gone through the steps above and have `S.gpg-agent.ssh` on the *remote*, and you would like to forward this agent into a *third* box, first you may need to configure `sshd_config` and `SSH_AUTH_SOCK` of *third* in the same way as *remote*, then in the ssh config of *remote*, add the following lines
-
-```console
-Host third
-  Hostname third-host.tld
-  StreamLocalBindUnlink yes
-  RemoteForward /run/user/1000/gnupg/S.gpg-agent.ssh /run/user/1000/gnupg/S.gpg-agent.ssh
-  # RemoteForward [remote socket] [local socket]
-  # Note that ForwardAgent is not wanted here!
-```
-
-You should change the path according to `gpgconf --list-dirs agent-ssh-socket` on *remote* and *third*.
+If you use `ssh-agent` provided by OpenSSH and want to forward it into a *third* box, you can just `ssh -A third` on the *remote*. Though if your intent is merely to get to the third box (particularly if this is a shared login node), then using `ssh -J remote third` from your local machine is much more secure.
 
 ## GitHub
 
@@ -606,210 +644,7 @@ Make sure the user.email option matches the email address associated with the PG
 
 Now, to sign commits or tags simply use the `-S` option. GPG will automatically query YubiKey and prompt you for a PIN.
 
-To authenticate:
-
-## macOS
-
-To use gui applications on macOS, [a little bit more setup is needed](https://jms1.net/yubikey/make-ssh-use-gpg-agent.md).
-
-Create `$HOME/Library/LaunchAgents/gnupg.gpg-agent.plist` with the following contents:
-
-```
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-    <dict>
-        <key>Label</key>
-        <string>gnupg.gpg-agent</string>
-        <key>RunAtLoad</key>
-        <true/>
-        <key>KeepAlive</key>
-        <false/>
-        <key>ProgramArguments</key>
-        <array>
-            <string>/opt/local/bin/gpg-connect-agent</string>
-            <string>/bye</string>
-        </array>
-    </dict>
-</plist>
-```
-
-```console
-launchctl load gnupg.gpg-agent.plist
-```
-
-Create `$HOME/Library/LaunchAgents/gnupg.gpg-agent-symlink.plist` with the following contens:
-
-```
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/ProperyList-1.0/dtd">
-<plist version="1.0">
-    <dict>
-        <key>Label</key>
-        <string>gnupg.gpg-agent-symlink</string>
-        <key>ProgramArguments</key>
-        <array>
-            <string>/bin/sh</string>
-            <string>-c</string>
-            <string>/bin/ln -sf $HOME/.gnupg/S.gpg-agent.ssh $SSH_AUTH_SOCK</string>
-        </array>
-        <key>RunAtLoad</key>
-        <true/>
-    </dict>
-</plist>
-```
-
-```console
-launchctl load gnupg.gpg-agent-symlink.plist
-```
-
-You will need to either reboot, or log out and log back in, in order to activate these changes.
-
-# Remote Machines (GPG Agent Forwarding)
-
-This section is different from ssh-agent forwarding in [SSH](#ssh) as gpg-agent forwarding has a broader usage, not only limited to ssh.
-
-To use YubiKey to sign a git commit on a remote host, or signing email/decrypt files on a remote host, configure and use GPG Agent Forwarding. To ssh through another network, especially to push to/pull from GitHub using ssh, see [Remote Machines (SSH Agent forwarding)](#remote-machines-ssh-agent-forwarding) for more info.
-
-To do this, you need access to the remote machine and the YubiKey has to be set up on the host machine.
-
-After gpg-agent forwarding, it is nearly the same as if YubiKey was inserted in the remote. Hence configurations except `gpg-agent.conf` for the remote can be the same as those for the local.
-
-**Important** `gpg-agent.conf` for the remote is of no use, hence `$GPG_TTY` is of no use too for the remote. The mechanism is that after forwarding, remote `gpg` directly communicates with `S.gpg-agent` without *starting* `gpg-agent` on the remote.
-
-On the remote machine, edit `/etc/ssh/sshd_config` to set `StreamLocalBindUnlink yes`
-
-**Optional** If you do not have root access to the remote machine to edit `/etc/ssh/sshd_config`, you will need to remove the socket (located at `gpgconf --list-dir agent-socket`) on the remote machine before forwarding works. For example, `rm /run/user/1000/gnupg/S.gpg-agent`. Further information can be found on the [AgentForwarding GNUPG wiki page](https://wiki.gnupg.org/AgentForwarding).
-
-Import public keys to the remote machine. This can be done by fetching from a keyserver. On the local machine, copy the public keyring to the remote machine:
-
-```console
-$ scp ~/.gnupg/pubring.kbx remote:~/.gnupg/
-```
-
-On modern distributions, such as Fedora 30, there is typically no need to also set `RemoteForward` in `~/.ssh/config` as detailed in the next chapter, because the right thing happens automatically.
-
-If any error happens (or there is no `gpg-agent.socket` in the remote) for modern distributions, you may go through the configuration steps in the next section.
-
-## Steps for older distributions
-
-On the local machine, run:
-
-```console
-$ gpgconf --list-dirs agent-extra-socket
-```
-
-This should return a path to agent-extra-socket - `/run/user/1000/gnupg/S.gpg-agent.extra` - though on older Linux distros (and macOS) it may be `/home/<user>/.gnupg/S/gpg-agent.extra`
-
-Find the agent socket on the **remote** machine:
-
-```console
-$ gpgconf --list-dirs agent-socket
-```
-
-This should return a path such as `/run/user/1000/gnupg/S.gpg-agent`
-
-Finally, enable agent forwarding for a given machine by adding the following to the local machine's ssh config file `~/.ssh/config` (your agent sockets may be different):
-
-```
-Host
-  Hostname remote-host.tld
-  StreamLocalBindUnlink yes
-  RemoteForward /run/user/1000/gnupg/S.gpg-agent /run/user/1000/gnupg/S.gpg-agent.extra
-  # RemoteForward [remote socket] [local socket]
-```
-
-If you're still having problems, it may be necessary to edit `gpg-agent.conf` file on the *local* machines to add the following information:
-
-```
-pinentry-program /usr/bin/pinentry-gtk-2
-extra-socket /run/user/1000/gnupg/S.gpg-agent.extra
-```
-
-**Note** The pinentry program starts on *local* machine, not remote. Hence when there are needs to enter the pin you need to find the prompt on the local machine.
-
-**Important** Any pinentry program except `pinentry-tty` or `pinentry-curses` may be used. This is because local `gpg-agent` may start headlessly (By systemd without `$GPG_TTY` set locally telling which tty it is on), thus failed to obtain the pin. Errors on the remote may be misleading saying that there is *IO Error*. (Yes, internally there is actually an *IO Error* since it happens when writing to/reading from tty while finding no tty to use, but for end users this is not friendly.)
-
-See [Issue #85](https://github.com/drduh/YubiKey-Guide/issues/85) for more information and troubleshooting.
-
-## Chained GPG Agent Forwarding
-
-Assume you have gone through the steps above and have `S.gpg-agent` on the *remote*, and you would like to forward this agent into a *third* box, first you may need to configure `sshd_config` of *third* in the same way as *remote*, then in the ssh config of *remote*, add the following lines:
-
-```console
-Host third
-  Hostname third-host.tld
-  StreamLocalBindUnlink yes
-  RemoteForward /run/user/1000/gnupg/S.gpg-agent /run/user/1000/gnupg/S.gpg-agent
-  # RemoteForward [remote socket] [local socket]
-```
-
-You should change the path according to `gpgconf --list-dirs agent-socket` on *remote* and *third*.
-
-**Note** On *local* you have `S.gpg-agent.extra` whereas on *remote* and *third*, you only have `S.gpg-agent`.
-
-# Require touch
-
-**Note** This is not possible on YubiKey NEO.
-
-By default, YubiKey will perform encryption, signing and authentication operations without requiring any action from the user, after the key is plugged in and first unlocked with the PIN.
-
-To require a touch for each key operation, install [YubiKey Manager](https://developers.yubico.com/yubikey-manager/) and recall the Admin PIN:
-
-**Note** Older versions of YubiKey Manager use `touch` instead of `set-touch` in the following commands.
-
-Authentication:
-
-```console
-$ ykman openpgp keys set-touch aut on
-```
-
-Signing:
-
-```console
-$ ykman openpgp keys set-touch sig on
-```
-
-Encryption:
-
-```console
-$ ykman openpgp keys set-touch enc on
-```
-
-Depending on how the YubiKey is going to be used, you may want to look at the policy options for each of these and adjust the above commands accordingly. They can be viewed with the following command:
-
-```
-$ ykman openpgp keys set-touch -h
-Usage: ykman openpgp keys set-touch [OPTIONS] KEY POLICY
-
-  Set touch policy for OpenPGP keys.
-
-  KEY     Key slot to set (sig, enc, aut or att).
-  POLICY  Touch policy to set (on, off, fixed, cached or cached-fixed).
-
-  The touch policy is used to require user interaction for all operations using the private key on the YubiKey. The touch policy is set individually for each key slot. To see the current touch policy, run
-
-      $ ykman openpgp info
-
-  Touch policies:
-
-  Off (default)   No touch required
-  On              Touch required
-  Fixed           Touch required, can't be disabled without a full reset
-  Cached          Touch required, cached for 15s after use
-  Cached-Fixed    Touch required, cached for 15s after use, can't be disabled
-                  without a full reset
-
-Options:
-  -a, --admin-pin TEXT  Admin PIN for OpenPGP.
-  -f, --force           Confirm the action without prompting.
-  -h, --help            Show this message and exit.
-```
-
-If the YubiKey is going to be used within an email client that opens and verifies encrypted mail, `Cached` or `Cached-Fixed` may be desirable.
-
-YubiKey will blink when it is waiting for a touch. On Linux you can also use [yubikey-touch-detector](https://github.com/maximbaz/yubikey-touch-detector) to have an indicator or notification that YubiKey is waiting for a touch.
+GitHub can now do even more: <https://github.blog/2021-05-10-security-keys-supported-ssh-git-operations/>
 
 # Reset
 
