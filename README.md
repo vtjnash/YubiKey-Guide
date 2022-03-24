@@ -2,6 +2,16 @@ This is a guide to using [YubiKey](https://www.yubico.com/products/yubikey-hardw
 
 Keys stored on YubiKey are [non-exportable](https://support.yubico.com/support/solutions/articles/15000010242-can-i-duplicate-or-back-up-a-yubikey-) (as opposed to file-based keys that are stored on disk) and are convenient for everyday use. Instead of having to remember and enter passphrases to unlock SSH/GPG keys, YubiKey needs only a physical touch after being unlocked with a PIN. All signing and encryption operations happen on the card, rather than in OS memory.
 
+## Ubuntu Linux
+
+```console
+sudo snap install yubioath-desktop
+
+sudo add-apt-repository ppa:yubico/stable && sudo apt-get update
+
+sudo apt install yubikey-manager libfido2-1
+```
+
 ## macOS
 
 Download and install MacPorts and the following packages:
@@ -22,9 +32,10 @@ $ echo "SCD RANDOM 512" | gpg-connect-agent | sudo tee /dev/random | hexdump -C
 ```
 This will seed the (Linux) kernel's PRNG with additional 512 bytes retrieved from the YubiKey.
 
-# Initializing device
+# GPG Setup
 
-# Creating keys
+<details open><summary>Setup Instructions:</summary>
+<p>
 
 Otherwise, to preserve the working environment, set the GnuPG directory to your home folder (default location for this):
 
@@ -460,15 +471,74 @@ PGP does not provide forward secrecy - a compromised key may be used to decrypt 
 
 To rotate the key, we will simply start over at the top of this guide with a new physical key.
 
+</p>
+</details>
+
 # SSH
 
-_Note that if you want to use a **YubiKey ONLY for SSH** (and don't really care about PGP/GPG), then [since OpenSSH v8.2](https://www.openssh.com/txt/release-8.2) you alternatively can simply `ssh-keygen -t ed25519-sk` (without requiring anything else from this guide!), as explained [e.g. in this guide](https://github.com/vorburger/vorburger.ch-Notes/blob/develop/security/ed25519-sk.md). Yubico also recently announced support for resident ssh keys under OpenSSH 8.2+ on their blue "security key 5 nfc" as mentioned in their [blog post](https://www.yubico.com/blog/github-now-supports-ssh-security-keys/)._
 
 [gpg-agent](https://wiki.archlinux.org/index.php/GnuPG#SSH_agent) supports the OpenSSH ssh-agent protocol (`enable-ssh-support`), as well as Putty's Pageant on Windows (`enable-putty-support`). This means it can be used instead of the traditional ssh-agent / pageant. There are some differences from ssh-agent, notably that gpg-agent does not _cache_ keys rather it converts, encrypts and stores them - persistently - as GPG keys and then makes them available to ssh clients. Any existing ssh private keys that you'd like to keep in `gpg-agent` should be deleted after they've been imported to the GPG agent.
 
 When importing the key to `gpg-agent`, you'll be prompted for a passphrase to protect that key within GPG's key store - you may want to use the same passphrase as the original's ssh version. GPG can both cache passphrases for a determined period (ref. `gpg-agent`'s various `cache-ttl` options), and since version 2.1 can store and fetch passphrases via the macOS keychain. Note than when removing the old private key after importing to `gpg-agent`, keep the `.pub` key file around for use in specifying ssh identities (e.g. `ssh -i /path/to/identity.pub`).
 
 Probably the biggest thing missing from `gpg-agent`'s ssh agent support is being able to remove keys. `ssh-add -d/-D` have no effect. Instead, you need to use the `gpg-connect-agent` utility to lookup a key's keygrip, match that with the desired ssh key fingerprint (as an MD5) and then delete that keygrip. The [gnupg-users mailing list](https://lists.gnupg.org/pipermail/gnupg-users/2016-August/056499.html) has more information.
+
+
+## Simple SSH-Only setup + Git Flow
+
+This is based on the blog post [here](https://www.yubico.com/blog/github-now-supports-ssh-security-keys/) that explains how to use the [GitHub SSH key support](https://help.github.com/articles/adding-a-new-ssh-key-to-your-github-account/) to securely push to GitHub.
+
+To start, we'll need to create a new SSH key pair that is stored in the YubiKey:
+
+```
+ssh-keygen -t ecdsa-sk -C "your@email.com"
+```
+
+You can then `cat ~/.ssh/id_ecdsa.pub` to get the public key and follow the instructions in the [GitHub guide](https://help.github.com/articles/adding-a-new-ssh-key-to-your-github-account/) ) to add the
+key to your account.
+
+To test everything was successful you should be able to do:
+
+```
+ssh git@github.com
+```
+
+(Note you will need to tap the Yubikey to authenticate and push commits)
+
+Tapping the YubiKey everytime you want to pull a public repository can be a bit annoying.
+To fix this on public repositories, we recommend the following setup in `~/.gitconfig`
+
+```
+[url "ssh://git@github.com/"]
+	pushInsteadOf = https://github.com/
+```
+
+or from the CLI:
+
+```
+git config --global url."ssh://git@github.com/".pushInsteadOf https://github.com/
+```
+
+It it important that now you should always clone the HTTPS option of a repository, not SSH.
+
+For example to update the remote for Julia:
+
+```
+$ git remote -v
+
+origin	git@github.com:JuliaLang/julia.git (fetch)
+origin	git@github.com:JuliaLang/julia.git (push)
+```
+
+```
+git remote set-url origin https://github.com/julialang/julia.git
+```
+
+```
+$ git remote -v
+origin	https://github.com/julialang/julia.git (fetch)
+origin	ssh://git@github.com/julialang/julia.git (push)
+```
 
 ## Create configuration
 
